@@ -1,0 +1,13 @@
+# Virtual Environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+
+# Database file (optional, but good practice for personal data)
+*.db
