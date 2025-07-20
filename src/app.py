@@ -57,7 +57,12 @@ class BudgetApp(App):
 
         # 4. Date input
         form_layout.add_widget(Label(text="Date:", font_size='16sp'))
-        self.date_input = TextInput(text=datetime.now().strftime("%Y-%m-%d"), multiline=False, font_size='16sp')
+        # *** MODIFIED ***: The default text now includes the time.
+        self.date_input = TextInput(
+            text=datetime.now().strftime("%Y-%m-%d %I:%M %p"), 
+            multiline=False, 
+            font_size='16sp'
+        )
         form_layout.add_widget(self.date_input)
 
         # 5. Note input
@@ -74,7 +79,6 @@ class BudgetApp(App):
         add_button.bind(on_press=self.add_transaction_callback)
         
         export_button = Button(text="Export Data", font_size='18sp')
-        # *** BINDING ***: Connect the export button to its callback method.
         export_button.bind(on_press=self.export_data_callback)
         
         button_layout.add_widget(add_button)
@@ -150,11 +154,9 @@ class BudgetApp(App):
         Called when the 'Export Data' button is pressed.
         Exports user transactions to an Excel file in the main project directory.
         """
-        # Define a dynamic file name with a timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"budget_export_{timestamp}.xlsx"
         
-        # Get the project's root directory
         project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         export_path = os.path.join(project_dir, file_name)
 
@@ -174,7 +176,8 @@ class BudgetApp(App):
         """Resets the input fields to their default state."""
         self.amount_input.text = ""
         self.note_input.text = ""
-        self.date_input.text = datetime.now().strftime("%Y-%m-%d")
+        # *** MODIFIED ***: The date input is now reset to the current date and time.
+        self.date_input.text = datetime.now().strftime("%Y-%m-%d %I:%M %p")
         self.type_spinner.text = 'Expense'
 
     def show_popup(self, title, text):
