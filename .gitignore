@@ -11,3 +11,9 @@ __pycache__/
 
 # Database file (optional, but good practice for personal data)
 *.db
+
+# PyInstaller files
+build/
+dist/
+*.spec
+
