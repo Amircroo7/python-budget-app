@@ -11,6 +11,7 @@ from kivy.uix.button import Button
 from kivy.uix.popup import Popup
 from kivy.core.window import Window
 from datetime import datetime
+import os # Import the os module
 
 # Import our database controller
 from database_controller import DatabaseController
@@ -70,10 +71,11 @@ class BudgetApp(App):
         button_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
         
         add_button = Button(text="Add Transaction", font_size='18sp')
-        # *** BINDING ***: Connect the button's 'on_press' event to our new method.
         add_button.bind(on_press=self.add_transaction_callback)
         
         export_button = Button(text="Export Data", font_size='18sp')
+        # *** BINDING ***: Connect the export button to its callback method.
+        export_button.bind(on_press=self.export_data_callback)
         
         button_layout.add_widget(add_button)
         button_layout.add_widget(export_button)
@@ -95,12 +97,10 @@ class BudgetApp(App):
         category_type = text.lower()
         categories_data = self.db_controller.get_categories(self.user_id, category_type)
         
-        # Clear the old map and prepare names for the spinner
         self.categories_map.clear()
-        category_names = []
+        category_names = [cat['name'] for cat in categories_data]
         for cat in categories_data:
             self.categories_map[cat['name']] = cat['id']
-            category_names.append(cat['name'])
         
         self.category_spinner.values = category_names
         if category_names:
@@ -113,13 +113,11 @@ class BudgetApp(App):
         This method is called when the 'Add Transaction' button is pressed.
         It validates input, saves the data, and provides user feedback.
         """
-        # 1. Gather data from UI
         category_name = self.category_spinner.text
         amount_text = self.amount_input.text
         date_text = self.date_input.text
         note_text = self.note_input.text
 
-        # 2. Validate input
         if not amount_text or float(amount_text) <= 0:
             self.show_popup("Input Error", "Please enter a valid amount.")
             return
@@ -127,21 +125,15 @@ class BudgetApp(App):
             self.show_popup("Input Error", "Please select a valid category.")
             return
 
-        # 3. Process data
         try:
             amount = float(amount_text)
             category_id = self.categories_map.get(category_name)
 
-            # 4. Call the database controller
             new_id = self.db_controller.add_transaction(
-                user_id=self.user_id,
-                category_id=category_id,
-                amount=amount,
-                date=date_text,
-                note=note_text
+                user_id=self.user_id, category_id=category_id,
+                amount=amount, date=date_text, note=note_text
             )
 
-            # 5. Provide feedback
             if new_id:
                 self.show_popup("Success", f"Transaction added successfully (ID: {new_id}).")
                 self.clear_inputs()
@@ -153,18 +145,42 @@ class BudgetApp(App):
         except Exception as e:
             self.show_popup("An Error Occurred", str(e))
 
+    def export_data_callback(self, instance):
+        """
+        Called when the 'Export Data' button is pressed.
+        Exports user transactions to an Excel file in the main project directory.
+        """
+        # Define a dynamic file name with a timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"budget_export_{timestamp}.xlsx"
+        
+        # Get the project's root directory
+        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        export_path = os.path.join(project_dir, file_name)
+
+        print(f"Attempting to export data to {export_path}...")
+        
+        success = self.db_controller.export_transactions_to_excel(
+            user_id=self.user_id,
+            file_path=export_path
+        )
+        
+        if success:
+            self.show_popup("Export Successful", f"Data exported to:\n{file_name}")
+        else:
+            self.show_popup("Export Failed", "Could not export data.\nCheck console for errors.")
+
     def clear_inputs(self):
         """Resets the input fields to their default state."""
         self.amount_input.text = ""
         self.note_input.text = ""
         self.date_input.text = datetime.now().strftime("%Y-%m-%d")
-        # Optionally reset spinners to default
         self.type_spinner.text = 'Expense'
 
     def show_popup(self, title, text):
         """Displays a simple popup window with a title and message."""
         popup_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        popup_label = Label(text=text)
+        popup_label = Label(text=text, halign='center')
         close_button = Button(text='Close', size_hint_y=None, height=40)
         
         popup_layout.add_widget(popup_label)
