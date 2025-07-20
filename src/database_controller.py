@@ -4,6 +4,7 @@ import sqlite3
 import os
 import hashlib # For password hashing
 from datetime import datetime
+import pandas as pd # Import pandas
 
 class DatabaseController:
     """
@@ -29,7 +30,6 @@ class DatabaseController:
         """
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON;")
-        # Return rows as dictionaries or Row objects for easier access by column name
         conn.row_factory = sqlite3.Row 
         return conn
 
@@ -42,13 +42,7 @@ class DatabaseController:
     def add_user(self, username, password):
         """
         Adds a new user to the database.
-
-        Args:
-            username (str): The desired username.
-            password (str): The user's plain-text password.
-
-        Returns:
-            int or None: The ID of the new user, or None if the username already exists.
+        Returns the ID of the new user, or None if the username already exists.
         """
         password_hash = self._hash_password(password)
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -61,7 +55,6 @@ class DatabaseController:
                 conn.commit()
                 return cursor.lastrowid
         except sqlite3.IntegrityError:
-            # This error occurs if the username is not unique.
             print(f"Error: Username '{username}' already exists.")
             return None
         except sqlite3.Error as e:
@@ -71,13 +64,7 @@ class DatabaseController:
     def verify_user(self, username, password):
         """
         Verifies a user's login credentials.
-
-        Args:
-            username (str): The username to verify.
-            password (str): The password to check.
-
-        Returns:
-            dict or None: A dictionary with user data if successful, otherwise None.
+        Returns a dictionary with user data if successful, otherwise None.
         """
         password_hash = self._hash_password(password)
         sql = "SELECT * FROM users WHERE username = ? AND password_hash = ?"
@@ -88,7 +75,6 @@ class DatabaseController:
             user_row = cursor.fetchone()
             
             if user_row:
-                # Convert the sqlite3.Row object to a standard dictionary
                 return dict(user_row)
             return None
 
@@ -97,15 +83,8 @@ class DatabaseController:
     def get_categories(self, user_id, category_type='expense'):
         """
         Fetches all categories for a given type (default + user-specific).
-
-        Args:
-            user_id (int): The ID of the current user.
-            category_type (str): 'income' or 'expense'.
-
-        Returns:
-            list: A list of dictionaries, where each dictionary represents a category.
+        Returns a list of dictionaries, where each dictionary represents a category.
         """
-        # SQL to get default categories (user_id IS NULL) AND user's custom categories
         sql = """
             SELECT id, name, icon FROM categories 
             WHERE type = ? AND (user_id = ? OR user_id IS NULL)
@@ -124,40 +103,98 @@ class DatabaseController:
             print(f"Database error in get_categories: {e}")
             return []
 
+    # --- Transaction Management Methods ---
+
+    def add_transaction(self, user_id, category_id, amount, date, note=None, payment_method=None, subcategory_id=None):
+        """Adds a new transaction to the database."""
+        sql = """
+            INSERT INTO transactions (user_id, category_id, subcategory_id, amount, date, note, payment_method)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (user_id, category_id, subcategory_id, amount, date, note, payment_method))
+                conn.commit()
+                return cursor.lastrowid
+        except sqlite3.Error as e:
+            print(f"Database error in add_transaction: {e}")
+            return None
+
+    def export_transactions_to_excel(self, user_id, file_path):
+        """
+        Fetches all transactions for a user and exports them to an Excel file.
+
+        Args:
+            user_id (int): The ID of the user whose data to export.
+            file_path (str): The full path for the output Excel file.
+
+        Returns:
+            bool: True if export was successful, False otherwise.
+        """
+        # This SQL query joins the transactions table with categories and subcategories
+        # to get human-readable names instead of just IDs.
+        sql = """
+            SELECT 
+                t.date,
+                c.name AS category,
+                sc.name AS subcategory,
+                t.amount,
+                t.payment_method,
+                t.note,
+                c.type
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            LEFT JOIN subcategories sc ON t.subcategory_id = sc.id
+            WHERE t.user_id = ?
+            ORDER BY t.date DESC
+        """
+        try:
+            with self._get_connection() as conn:
+                # Use pandas to read the SQL query results directly into a DataFrame
+                df = pd.read_sql_query(sql, conn, params=(user_id,))
+            
+            # Use pandas to write the DataFrame to an Excel file
+            df.to_excel(file_path, index=False, engine='openpyxl')
+            print(f"Successfully exported data to {file_path}")
+            return True
+        except Exception as e:
+            print(f"An error occurred during Excel export: {e}")
+            return False
+
+
 # --- Example Usage ---
 if __name__ == '__main__':
-    # This block demonstrates how to use the controller.
-    # It will only run when you execute this file directly.
-    
     controller = DatabaseController()
-
-    print("\n--- Testing User Management ---")
-    # Try adding a new user
-    new_user_id = controller.add_user("testuser", "password123")
-    if new_user_id:
-        print(f"Successfully added new user with ID: {new_user_id}")
     
-    # Try adding the same user again (should fail)
-    controller.add_user("testuser", "password123")
-
-    # Verify the user
+    print("\n--- Setting up test user ---")
+    # Ensure our test user exists
+    controller.add_user("testuser", "password123") 
     verified_user = controller.verify_user("testuser", "password123")
+    
     if verified_user:
-        print(f"User 'testuser' verified successfully. User data: {verified_user}")
         current_user_id = verified_user['id']
+        print(f"Verified user 'testuser' with ID: {current_user_id}")
 
-        print("\n--- Testing Category Management ---")
-        # Get expense categories for the verified user
-        expense_cats = controller.get_categories(current_user_id, 'expense')
-        print(f"Found {len(expense_cats)} expense categories:")
-        for cat in expense_cats:
-            print(f"  - {cat['icon']} {cat['name']} (ID: {cat['id']})")
+        print("\n--- Adding sample transactions ---")
+        # Get some category IDs to use for our sample data
+        groceries_cat = next((c for c in controller.get_categories(current_user_id, 'expense') if c['name'] == 'Groceries'), None)
+        salary_cat = next((c for c in controller.get_categories(current_user_id, 'income') if c['name'] == 'Salary'), None)
+        
+        if groceries_cat and salary_cat:
+            # Add an income transaction
+            controller.add_transaction(current_user_id, salary_cat['id'], 5000, '2025-07-01', 'Monthly Paycheck', 'Direct Deposit')
+            # Add some expense transactions
+            controller.add_transaction(current_user_id, groceries_cat['id'], 75.50, '2025-07-05', 'Weekly groceries', 'Credit Card')
+            controller.add_transaction(current_user_id, groceries_cat['id'], 120.00, '2025-07-12', 'Groceries for party', 'Debit Card')
+            print("Sample transactions added.")
+        else:
+            print("Could not find 'Groceries' or 'Salary' category to add sample data.")
 
-        # Get income categories for the verified user
-        income_cats = controller.get_categories(current_user_id, 'income')
-        print(f"\nFound {len(income_cats)} income categories:")
-        for cat in income_cats:
-            print(f"  - {cat['icon']} {cat['name']} (ID: {cat['id']})")
+        print("\n--- Testing Export Functionality ---")
+        # Define the output file path (it will be in the main BudgetApp folder)
+        export_path = os.path.join(os.path.dirname(controller.db_path), 'budget_export.xlsx')
+        controller.export_transactions_to_excel(current_user_id, export_path)
     else:
-        print("User verification failed.")
+        print("Could not verify test user.")
 
