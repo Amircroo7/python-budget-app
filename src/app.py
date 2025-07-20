@@ -17,7 +17,7 @@ import os # Import the os module
 from database_controller import DatabaseController
 
 # Set a default window size for easier desktop development
-Window.size = (400, 550)
+Window.size = (400, 600) # Increased height for status bar and future list
 
 class BudgetApp(App):
     """
@@ -39,33 +39,24 @@ class BudgetApp(App):
         main_layout = BoxLayout(orientation='vertical', padding=15, spacing=10)
         form_layout = GridLayout(cols=2, spacing=10, size_hint_y=None, height=220)
         
-        # 1. Type selection
+        # ... (Form widgets remain the same)
         form_layout.add_widget(Label(text="Type:", font_size='16sp'))
         self.type_spinner = Spinner(text='Expense', values=('Expense', 'Income'), font_size='16sp')
         self.type_spinner.bind(text=self.update_categories)
         form_layout.add_widget(self.type_spinner)
 
-        # 2. Category selection
         form_layout.add_widget(Label(text="Category:", font_size='16sp'))
         self.category_spinner = Spinner(text='Select Category', values=(), font_size='16sp')
         form_layout.add_widget(self.category_spinner)
 
-        # 3. Amount input
         form_layout.add_widget(Label(text="Amount:", font_size='16sp'))
         self.amount_input = TextInput(multiline=False, input_filter='float', hint_text='0.00', font_size='16sp')
         form_layout.add_widget(self.amount_input)
 
-        # 4. Date input
         form_layout.add_widget(Label(text="Date:", font_size='16sp'))
-        # *** MODIFIED ***: The default text now includes the time.
-        self.date_input = TextInput(
-            text=datetime.now().strftime("%Y-%m-%d %I:%M %p"), 
-            multiline=False, 
-            font_size='16sp'
-        )
+        self.date_input = TextInput(text=datetime.now().strftime("%Y-%m-%d %I:%M %p"), multiline=False, font_size='16sp')
         form_layout.add_widget(self.date_input)
 
-        # 5. Note input
         form_layout.add_widget(Label(text="Note:", font_size='16sp'))
         self.note_input = TextInput(multiline=False, hint_text='Optional description', font_size='16sp')
         form_layout.add_widget(self.note_input)
@@ -74,13 +65,10 @@ class BudgetApp(App):
         
         # --- Action Buttons ---
         button_layout = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        
         add_button = Button(text="Add Transaction", font_size='18sp')
         add_button.bind(on_press=self.add_transaction_callback)
-        
         export_button = Button(text="Export Data", font_size='18sp')
         export_button.bind(on_press=self.export_data_callback)
-        
         button_layout.add_widget(add_button)
         button_layout.add_widget(export_button)
         main_layout.add_widget(button_layout)
@@ -88,6 +76,19 @@ class BudgetApp(App):
         # --- Transaction List (Placeholder) ---
         main_layout.add_widget(Label(text="Recent transactions will appear here...", size_hint_y=1.0))
         
+        # *** NEW WIDGET ***: A status bar at the bottom.
+        self.status_bar = Label(
+            text="Ready", 
+            size_hint_y=None, 
+            height=30,
+            halign='left',
+            valign='middle',
+            padding_x=10
+        )
+        # We need to bind the texture_size to itself to make the alignment work correctly.
+        self.status_bar.bind(texture_size=self.status_bar.setter('size'))
+        main_layout.add_widget(self.status_bar)
+
         # --- Initial Data Load ---
         self.update_categories(self.type_spinner, self.type_spinner.text)
         
@@ -139,7 +140,8 @@ class BudgetApp(App):
             )
 
             if new_id:
-                self.show_popup("Success", f"Transaction added successfully (ID: {new_id}).")
+                # *** MODIFIED ***: Use status bar for success message.
+                self.status_bar.text = f"Success: Transaction (ID: {new_id}) added."
                 self.clear_inputs()
             else:
                 self.show_popup("Database Error", "Failed to add transaction.")
@@ -159,8 +161,6 @@ class BudgetApp(App):
         
         project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         export_path = os.path.join(project_dir, file_name)
-
-        print(f"Attempting to export data to {export_path}...")
         
         success = self.db_controller.export_transactions_to_excel(
             user_id=self.user_id,
@@ -168,7 +168,8 @@ class BudgetApp(App):
         )
         
         if success:
-            self.show_popup("Export Successful", f"Data exported to:\n{file_name}")
+            # *** MODIFIED ***: Use status bar for success message.
+            self.status_bar.text = f"Success: Data exported to {file_name}"
         else:
             self.show_popup("Export Failed", "Could not export data.\nCheck console for errors.")
 
@@ -176,9 +177,9 @@ class BudgetApp(App):
         """Resets the input fields to their default state."""
         self.amount_input.text = ""
         self.note_input.text = ""
-        # *** MODIFIED ***: The date input is now reset to the current date and time.
         self.date_input.text = datetime.now().strftime("%Y-%m-%d %I:%M %p")
         self.type_spinner.text = 'Expense'
+        self.status_bar.text = "Ready" # Reset status bar text
 
     def show_popup(self, title, text):
         """Displays a simple popup window with a title and message."""
