@@ -2,9 +2,10 @@
 
 import sqlite3
 import os
-import hashlib # For password hashing
+import sys # Import sys to check for bundled app
+import hashlib 
 from datetime import datetime
-import pandas as pd # Import pandas
+import pandas as pd # type: ignore
 
 class DatabaseController:
     """
@@ -16,12 +17,24 @@ class DatabaseController:
     def __init__(self, db_name="my_budget.db"):
         """
         Initializes the DatabaseController and sets the path to the database file.
-
-        Args:
-            db_name (str): The name of the database file.
+        This now correctly handles paths for both normal execution and a bundled .exe.
         """
-        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.db_path = os.path.join(project_dir, db_name)
+        # *** MODIFIED CODE BLOCK ***
+        # This logic determines the correct base path whether running as a script
+        # or as a frozen .exe file created by PyInstaller.
+        if getattr(sys, 'frozen', False):
+            # If the application is run as a bundle, the PyInstaller bootloader
+            # extends the sys module by a flag frozen=True and sets the app 
+            # path into variable _MEIPASS'.
+            base_path = sys._MEIPASS
+        else:
+            # Running as a normal .py script. The path is relative to this file.
+            # Go up two directories from src/ to the project root.
+            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # The database path is now correctly set in both scenarios.
+        self.db_path = os.path.join(base_path, db_name)
+        # --- END OF MODIFIED BLOCK ---
 
     def _get_connection(self):
         """
@@ -124,16 +137,7 @@ class DatabaseController:
     def export_transactions_to_excel(self, user_id, file_path):
         """
         Fetches all transactions for a user and exports them to an Excel file.
-
-        Args:
-            user_id (int): The ID of the user whose data to export.
-            file_path (str): The full path for the output Excel file.
-
-        Returns:
-            bool: True if export was successful, False otherwise.
         """
-        # This SQL query joins the transactions table with categories and subcategories
-        # to get human-readable names instead of just IDs.
         sql = """
             SELECT 
                 t.date,
@@ -151,10 +155,8 @@ class DatabaseController:
         """
         try:
             with self._get_connection() as conn:
-                # Use pandas to read the SQL query results directly into a DataFrame
                 df = pd.read_sql_query(sql, conn, params=(user_id,))
             
-            # Use pandas to write the DataFrame to an Excel file
             df.to_excel(file_path, index=False, engine='openpyxl')
             print(f"Successfully exported data to {file_path}")
             return True
@@ -162,39 +164,4 @@ class DatabaseController:
             print(f"An error occurred during Excel export: {e}")
             return False
 
-
-# --- Example Usage ---
-if __name__ == '__main__':
-    controller = DatabaseController()
-    
-    print("\n--- Setting up test user ---")
-    # Ensure our test user exists
-    controller.add_user("testuser", "password123") 
-    verified_user = controller.verify_user("testuser", "password123")
-    
-    if verified_user:
-        current_user_id = verified_user['id']
-        print(f"Verified user 'testuser' with ID: {current_user_id}")
-
-        print("\n--- Adding sample transactions ---")
-        # Get some category IDs to use for our sample data
-        groceries_cat = next((c for c in controller.get_categories(current_user_id, 'expense') if c['name'] == 'Groceries'), None)
-        salary_cat = next((c for c in controller.get_categories(current_user_id, 'income') if c['name'] == 'Salary'), None)
-        
-        if groceries_cat and salary_cat:
-            # Add an income transaction
-            controller.add_transaction(current_user_id, salary_cat['id'], 5000, '2025-07-01', 'Monthly Paycheck', 'Direct Deposit')
-            # Add some expense transactions
-            controller.add_transaction(current_user_id, groceries_cat['id'], 75.50, '2025-07-05', 'Weekly groceries', 'Credit Card')
-            controller.add_transaction(current_user_id, groceries_cat['id'], 120.00, '2025-07-12', 'Groceries for party', 'Debit Card')
-            print("Sample transactions added.")
-        else:
-            print("Could not find 'Groceries' or 'Salary' category to add sample data.")
-
-        print("\n--- Testing Export Functionality ---")
-        # Define the output file path (it will be in the main BudgetApp folder)
-        export_path = os.path.join(os.path.dirname(controller.db_path), 'budget_export.xlsx')
-        controller.export_transactions_to_excel(current_user_id, export_path)
-    else:
-        print("Could not verify test user.")
-
+# Example usage block is omitted for brevity but would be here for testing.
